@@ -120,22 +120,64 @@ fun ShoppingItemsScreen(
         }
 
         if (showDialog) {
+            val stores by viewModel.stores.collectAsState()
+            var newItemName by remember { mutableStateOf("") }
+            var selectedStoreId by remember { mutableStateOf<String?>(null) }
+            var quantity by remember { mutableStateOf("1") }
+            var price by remember { mutableStateOf("") }
+
             AlertDialog(
                 onDismissRequest = { showDialog = false },
                 title = { Text("Новый товар") },
                 text = {
-                    OutlinedTextField(
-                        value = newItemName,
-                        onValueChange = { newItemName = it },
-                        label = { Text("Название") },
-                        placeholder = { Text("Например: Молоко") }
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = newItemName,
+                            onValueChange = { newItemName = it },
+                            label = { Text("Название") },
+                            placeholder = { Text("Например: Молоко") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        // Выбор магазина
+                        Text("Магазин:", style = MaterialTheme.typography.bodyMedium)
+                        stores.forEach { store ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                RadioButton(
+                                    selected = selectedStoreId == store.id,
+                                    onClick = { selectedStoreId = store.id }
+                                )
+                                Text(store.name)
+                            }
+                        }
+                        // Количество
+                        OutlinedTextField(
+                            value = quantity,
+                            onValueChange = { quantity = it },
+                            label = { Text("Количество") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        // Цена
+                        OutlinedTextField(
+                            value = price,
+                            onValueChange = { price = it },
+                            label = { Text("Цена (€)") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 },
                 confirmButton = {
                     TextButton(onClick = {
                         if (newItemName.isNotBlank()) {
-                            viewModel.addItemByName(listId, newItemName)
-                            newItemName = ""
+                            viewModel.addItemByName(
+                                listId = listId,
+                                name = newItemName,
+                                storeId = selectedStoreId,
+                                quantity = quantity.toDoubleOrNull() ?: 1.0,
+                                price = price.toDoubleOrNull()
+                            )
                             showDialog = false
                         }
                     }) { Text("Добавить") }

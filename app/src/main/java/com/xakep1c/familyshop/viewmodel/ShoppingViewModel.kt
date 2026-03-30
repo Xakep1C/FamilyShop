@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import android.util.Log
+import com.xakep1c.familyshop.model.Product
 
 class ShoppingViewModel : ViewModel() {
 
@@ -31,10 +32,14 @@ class ShoppingViewModel : ViewModel() {
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
 
+    private val _products = MutableStateFlow<List<Product>>(emptyList())
+    val products: StateFlow<List<Product>> = _products
+
     // Загрузка при старте
     init {
         loadStores()
         loadShoppingLists()
+        loadProducts()
     }
 
     fun loadStores() {
@@ -113,18 +118,38 @@ class ShoppingViewModel : ViewModel() {
             }
         }
     }
-    fun addItemByName(listId: String, name: String) {
+    fun addItemByName(
+        listId: String,
+        name: String,
+        storeId: String? = null,
+        quantity: Double = 1.0,
+        price: Double? = null
+    ) {
         viewModelScope.launch {
             try {
                 val item = ShoppingListItem(
                     listId = listId,
-                    customName = name
+                    customName = name,
+                    storeId = storeId,
+                    quantity = quantity,
+                    price = price
                 )
                 repository.addItem(item)
                 loadItems(listId)
             } catch (e: Exception) {
                 Log.e("ViewModel", "Add item error: ${e.message}", e)
                 _error.value = e.message
+            }
+        }
+    }
+
+
+    fun loadProducts() {
+        viewModelScope.launch {
+            try {
+                _products.value = repository.getProducts()
+            } catch (e: Exception) {
+                Log.e("ViewModel", "Products error: ${e.message}", e)
             }
         }
     }

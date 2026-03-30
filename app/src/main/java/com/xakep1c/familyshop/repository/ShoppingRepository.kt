@@ -5,6 +5,7 @@ import com.xakep1c.familyshop.model.ShoppingList
 import com.xakep1c.familyshop.model.ShoppingListItem
 import com.xakep1c.familyshop.model.Store
 import com.xakep1c.familyshop.supabase
+import com.xakep1c.familyshop.model.Product
 import io.github.jan.supabase.postgrest.postgrest
 
 class ShoppingRepository {
@@ -51,4 +52,6 @@ class ShoppingRepository {
         supabase.postgrest["shopping_list_items"]
             .delete { filter { eq("id", itemId) } }
 
+    suspend fun getProducts(): List<Product> =
+        supabase.postgrest["products"].select().decodeList<Product>()
 }

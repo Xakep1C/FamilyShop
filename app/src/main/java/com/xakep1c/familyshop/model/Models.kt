@@ -39,3 +39,11 @@ data class ShoppingListItem(
     val price: Double? = null,
     @SerialName("is_checked") val isChecked: Boolean = false
 )
+@Serializable
+data class Product(
+    val id: String = "",
+    @SerialName("name_ru") val nameRu: String = "",
+    @SerialName("name_nl") val nameNl: String = "",
+    @SerialName("default_store_id") val defaultStoreId: String? = null,
+    @SerialName("category_id") val categoryId: String? = null
+)
