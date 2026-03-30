@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
 }
 
 val localProps = Properties().apply {
@@ -31,6 +32,7 @@ android {
         val localProperties = com.android.build.gradle.internal.cxx.configure.gradleLocalProperties(rootDir, providers)
         buildConfigField("String", "SUPABASE_URL", "\"${localProperties["SUPABASE_URL"] ?: ""}\"")
         buildConfigField("String", "SUPABASE_KEY", "\"${localProperties["SUPABASE_KEY"] ?: ""}\"")
+        buildConfigField("String", "GOOGLE_CLIENT_ID", "\"${localProperties["GOOGLE_CLIENT_ID"] ?: ""}\"")
     }
 
     buildTypes {
@@ -71,6 +73,17 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.navigation.compose)
+
+    // Room
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
+
+    // Auth
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.google.id)
 
     // Supabase
     implementation(libs.supabase.postgrest)

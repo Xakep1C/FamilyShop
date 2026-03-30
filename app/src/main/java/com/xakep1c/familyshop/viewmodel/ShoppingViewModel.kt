@@ -1,28 +1,32 @@
 package com.xakep1c.familyshop.viewmodel
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.xakep1c.familyshop.db.AppDatabase
 import com.xakep1c.familyshop.model.ShoppingList
 import com.xakep1c.familyshop.model.ShoppingListItem
 import com.xakep1c.familyshop.model.Store
 import com.xakep1c.familyshop.repository.ShoppingRepository
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import android.util.Log
 import com.xakep1c.familyshop.model.Product
 
-class ShoppingViewModel : ViewModel() {
+class ShoppingViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val repository = ShoppingRepository()
+    private val repository: ShoppingRepository
 
-    // Состояния UI
-    private val _stores = MutableStateFlow<List<Store>>(emptyList())
-    val stores: StateFlow<List<Store>> = _stores
+    // Состояния UI (теперь получаем из Room через Flow)
+    val shoppingLists: StateFlow<List<ShoppingList>>
+    
+    // Отдельные потоки для активных и завершенных списков
+    val activeLists: StateFlow<List<ShoppingList>>
+    val completedLists: StateFlow<List<ShoppingList>>
 
-    private val _shoppingLists = MutableStateFlow<List<ShoppingList>>(emptyList())
-    val shoppingLists: StateFlow<List<ShoppingList>> = _shoppingLists
-
+    val stores: StateFlow<List<Store>>
+    val products: StateFlow<List<Product>>
+    
     private val _items = MutableStateFlow<List<ShoppingListItem>>(emptyList())
     val items: StateFlow<List<ShoppingListItem>> = _items
 
@@ -32,36 +36,43 @@ class ShoppingViewModel : ViewModel() {
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
 
-    private val _products = MutableStateFlow<List<Product>>(emptyList())
-    val products: StateFlow<List<Product>> = _products
-
-    // Загрузка при старте
     init {
-        loadStores()
-        loadShoppingLists()
-        loadProducts()
+        val dao = AppDatabase.getDatabase(application).shoppingDao()
+        repository = ShoppingRepository(dao)
+
+        // Связываем StateFlow с Flow из БД
+        shoppingLists = repository.allShoppingLists.stateIn(
+            viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
+        )
+        
+        activeLists = shoppingLists
+            .map { list -> list.filter { !it.isCompleted } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+        completedLists = shoppingLists
+            .map { list -> list.filter { it.isCompleted } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+        stores = repository.allStores.stateIn(
+            viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
+        )
+        products = repository.allProducts.stateIn(
+            viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
+        )
+
+        // Первичная загрузка из сети в кэш
+        refreshInitialData()
     }
 
-    fun loadStores() {
-        viewModelScope.launch {
-            try {
-                _stores.value = repository.getStores()
-            } catch (e: Exception) {
-                _error.value = e.message
-            }
-        }
-    }
-
-    fun loadShoppingLists() {
+    private fun refreshInitialData() {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val result = repository.getShoppingLists()
-                Log.d("ViewModel", "Lists loaded: ${result.size}")
-                _shoppingLists.value = result
+                repository.refreshShoppingLists()
+                repository.refreshStores()
+                repository.refreshProducts()
             } catch (e: Exception) {
-                Log.e("ViewModel", "Lists error: ${e.message}", e)
-                _error.value = e.message
+                _error.value = "Ошибка синхронизации: ${e.message}"
             } finally {
                 _isLoading.value = false
             }
@@ -72,24 +83,36 @@ class ShoppingViewModel : ViewModel() {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val result = repository.getItems(listId)
-                Log.d("ViewModel", "Items loaded: ${result.size}")
-                _items.value = result
+                // Подписываемся на изменения в Room для конкретного списка
+                repository.getItems(listId).collect {
+                    _items.value = it
+                }
+                // Запрашиваем обновление из сети
+                repository.refreshItems(listId)
             } catch (e: Exception) {
-                Log.e("ViewModel", "Items error: ${e.message}", e)
                 _error.value = e.message
             } finally {
                 _isLoading.value = false
             }
         }
     }
+
     fun createShoppingList(name: String) {
         viewModelScope.launch {
             try {
                 repository.createShoppingList(name)
-                loadShoppingLists() // обновляем список
             } catch (e: Exception) {
-                _error.value = e.message
+                _error.value = "Не удалось создать список: ${e.message}"
+            }
+        }
+    }
+
+    fun completeList(listId: String) {
+        viewModelScope.launch {
+            try {
+                repository.completeShoppingList(listId)
+            } catch (e: Exception) {
+                _error.value = "Не удалось завершить список: ${e.message}"
             }
         }
     }
@@ -98,10 +121,6 @@ class ShoppingViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 repository.checkItem(itemId, checked)
-                // обновляем локально без запроса к серверу
-                _items.value = _items.value.map {
-                    if (it.id == itemId) it.copy(isChecked = checked) else it
-                }
             } catch (e: Exception) {
                 _error.value = e.message
             }
@@ -112,12 +131,12 @@ class ShoppingViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 repository.deleteItem(itemId)
-                _items.value = _items.value.filter { it.id != itemId }
             } catch (e: Exception) {
                 _error.value = e.message
             }
         }
     }
+
     fun addItemByName(
         listId: String,
         name: String,
@@ -128,6 +147,7 @@ class ShoppingViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 val item = ShoppingListItem(
+                    id = java.util.UUID.randomUUID().toString(),
                     listId = listId,
                     customName = name,
                     storeId = storeId,
@@ -135,7 +155,6 @@ class ShoppingViewModel : ViewModel() {
                     price = price
                 )
                 repository.addItem(item)
-                loadItems(listId)
             } catch (e: Exception) {
                 Log.e("ViewModel", "Add item error: ${e.message}", e)
                 _error.value = e.message
@@ -143,13 +162,25 @@ class ShoppingViewModel : ViewModel() {
         }
     }
 
-
-    fun loadProducts() {
+    // Функция для копирования товаров из одного списка в другой (История -> Новый заказ)
+    fun copyItemsFromList(fromListId: String, toListId: String) {
         viewModelScope.launch {
             try {
-                _products.value = repository.getProducts()
+                val dao = AppDatabase.getDatabase(getApplication()).shoppingDao()
+                val oldItems = dao.getItemsByListIdDirect(fromListId)
+                
+                val newItems = oldItems.map { oldItem ->
+                    oldItem.copy(
+                        id = java.util.UUID.randomUUID().toString(),
+                        listId = toListId,
+                        isChecked = false // В новом списке всё не куплено
+                    )
+                }
+                
+                repository.addItems(newItems)
             } catch (e: Exception) {
-                Log.e("ViewModel", "Products error: ${e.message}", e)
+                Log.e("ViewModel", "Copy items error: ${e.message}", e)
+                _error.value = "Не удалось скопировать товары: ${e.message}"
             }
         }
     }
