@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
@@ -27,7 +28,6 @@ fun ShoppingItemsScreen(
     val items by viewModel.items.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     var showDialog by remember { mutableStateOf(false) }
-    var newItemName by remember { mutableStateOf("") }
 
     LaunchedEffect(listId) {
         viewModel.loadItems(listId)
@@ -39,7 +39,10 @@ fun ShoppingItemsScreen(
                 title = { Text(listName) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Text("←")
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Назад"
+                        )
                     }
                 }
             )
@@ -121,7 +124,7 @@ fun ShoppingItemsScreen(
 
         if (showDialog) {
             val stores by viewModel.stores.collectAsState()
-            var newItemName by remember { mutableStateOf("") }
+            var name by remember { mutableStateOf("") }
             var selectedStoreId by remember { mutableStateOf<String?>(null) }
             var quantity by remember { mutableStateOf("1") }
             var price by remember { mutableStateOf("") }
@@ -132,8 +135,8 @@ fun ShoppingItemsScreen(
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
-                            value = newItemName,
-                            onValueChange = { newItemName = it },
+                            value = name,
+                            onValueChange = { name = it },
                             label = { Text("Название") },
                             placeholder = { Text("Например: Молоко") },
                             modifier = Modifier.fillMaxWidth()
@@ -170,10 +173,10 @@ fun ShoppingItemsScreen(
                 },
                 confirmButton = {
                     TextButton(onClick = {
-                        if (newItemName.isNotBlank()) {
+                        if (name.isNotBlank()) {
                             viewModel.addItemByName(
                                 listId = listId,
-                                name = newItemName,
+                                name = name,
                                 storeId = selectedStoreId,
                                 quantity = quantity.toDoubleOrNull() ?: 1.0,
                                 price = price.toDoubleOrNull()
