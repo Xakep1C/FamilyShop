@@ -16,6 +16,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xakep1c.familyshop.viewmodel.ShoppingViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -27,10 +28,23 @@ fun ShoppingItemsScreen(
 ) {
     val items by viewModel.items.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val error by viewModel.error.collectAsState()
+    
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     var showDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(listId) {
         viewModel.loadItems(listId)
+    }
+
+    // Отображение ошибки через Snackbar
+    LaunchedEffect(error) {
+        error?.let {
+            scope.launch {
+                snackbarHostState.showSnackbar(it)
+            }
+        }
     }
 
     Scaffold(
@@ -47,6 +61,7 @@ fun ShoppingItemsScreen(
                 }
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             FloatingActionButton(onClick = { showDialog = true }) {
                 Icon(Icons.Default.Add, contentDescription = "Добавить товар")
@@ -56,14 +71,14 @@ fun ShoppingItemsScreen(
 
         if (isLoading) {
             Box(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().padding(padding),
                 contentAlignment = Alignment.Center
             ) {
                 CircularProgressIndicator()
             }
         } else if (items.isEmpty()) {
             Box(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().padding(padding),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
