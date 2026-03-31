@@ -5,13 +5,14 @@ import com.xakep1c.familyshop.model.*
 import com.xakep1c.familyshop.supabase
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.realtime.PostgresAction
-import io.github.jan.supabase.realtime.Realtime
 import io.github.jan.supabase.realtime.channel
+import io.github.jan.supabase.realtime.decodeRecord
 import io.github.jan.supabase.realtime.postgresChangeFlow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import android.util.Log
 
 class ShoppingRepository(private val dao: ShoppingDao) {
@@ -36,14 +37,18 @@ class ShoppingRepository(private val dao: ShoppingDao) {
         channel.postgresChangeFlow<PostgresAction>(schema = "public") {
             table = "shopping_lists"
         }.onEach { action ->
-            when (action) {
-                is PostgresAction.Insert -> dao.insertShoppingLists(listOf(action.decodeRecord()))
-                is PostgresAction.Update -> dao.insertShoppingLists(listOf(action.decodeRecord()))
-                is PostgresAction.Delete -> {
-                    val id = action.oldRecord["id"]?.toString()?.replace("\"", "")
-                    if (id != null) dao.deleteShoppingList(id)
+            try {
+                when (action) {
+                    is PostgresAction.Insert -> dao.insertShoppingLists(listOf(action.decodeRecord<ShoppingList>()))
+                    is PostgresAction.Update -> dao.insertShoppingLists(listOf(action.decodeRecord<ShoppingList>()))
+                    is PostgresAction.Delete -> {
+                        val id = action.oldRecord["id"]?.toString()?.replace("\"", "")
+                        if (id != null) dao.deleteShoppingList(id)
+                    }
+                    else -> {}
                 }
-                else -> {}
+            } catch (e: Exception) {
+                Log.e("Realtime", "Error decoding list action: ${e.message}")
             }
         }.launchIn(scope)
 
@@ -51,14 +56,18 @@ class ShoppingRepository(private val dao: ShoppingDao) {
         channel.postgresChangeFlow<PostgresAction>(schema = "public") {
             table = "shopping_list_items"
         }.onEach { action ->
-            when (action) {
-                is PostgresAction.Insert -> dao.insertItems(listOf(action.decodeRecord()))
-                is PostgresAction.Update -> dao.insertItems(listOf(action.decodeRecord()))
-                is PostgresAction.Delete -> {
-                    val id = action.oldRecord["id"]?.toString()?.replace("\"", "")
-                    if (id != null) dao.deleteItem(id)
+            try {
+                when (action) {
+                    is PostgresAction.Insert -> dao.insertItems(listOf(action.decodeRecord<ShoppingListItem>()))
+                    is PostgresAction.Update -> dao.insertItems(listOf(action.decodeRecord<ShoppingListItem>()))
+                    is PostgresAction.Delete -> {
+                        val id = action.oldRecord["id"]?.toString()?.replace("\"", "")
+                        if (id != null) dao.deleteItem(id)
+                    }
+                    else -> {}
                 }
-                else -> {}
+            } catch (e: Exception) {
+                Log.e("Realtime", "Error decoding item action: ${e.message}")
             }
         }.launchIn(scope)
 
