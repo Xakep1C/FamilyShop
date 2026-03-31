@@ -11,16 +11,19 @@ import com.xakep1c.familyshop.repository.ShoppingRepository
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import android.util.Log
+import com.xakep1c.familyshop.model.OnlineProduct
 import com.xakep1c.familyshop.model.Product
+import com.xakep1c.familyshop.supabase
+import io.github.jan.supabase.functions.functions
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 class ShoppingViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository: ShoppingRepository
 
-    // Состояния UI (теперь получаем из Room через Flow)
+    // Состояния UI
     val shoppingLists: StateFlow<List<ShoppingList>>
-    
-    // Отдельные потоки для активных и завершенных списков
     val activeLists: StateFlow<List<ShoppingList>>
     val completedLists: StateFlow<List<ShoppingList>>
 
@@ -36,11 +39,14 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
 
+    // Результаты онлайн-поиска
+    private val _onlineSearchResults = MutableStateFlow<List<OnlineProduct>>(emptyList())
+    val onlineSearchResults = _onlineSearchResults.asStateFlow()
+
     init {
         val dao = AppDatabase.getDatabase(application).shoppingDao()
         repository = ShoppingRepository(dao)
 
-        // Связываем StateFlow с Flow из БД
         shoppingLists = repository.allShoppingLists.stateIn(
             viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
         )
@@ -60,10 +66,7 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
             viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
         )
 
-        // Первичная загрузка из сети в кэш
         refreshInitialData()
-        
-        // Включаем Realtime прослушивание
         repository.observeRealtimeChanges(viewModelScope)
     }
 
@@ -82,15 +85,37 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun searchOnline(query: String) {
+        if (query.isBlank()) return
+        viewModelScope.launch {
+            _isLoading.value = true
+            _onlineSearchResults.value = emptyList()
+            try {
+                val response = supabase.functions.invoke("search-products", 
+                    body = buildJsonObject { put("query", query) }
+                )
+                val results = response.decodeAs<List<OnlineProduct>>()
+                _onlineSearchResults.value = results
+            } catch (e: Exception) {
+                Log.e("ViewModel", "Online search error", e)
+                _error.value = "Ошибка поиска онлайн: ${e.localizedMessage}"
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    fun clearOnlineResults() {
+        _onlineSearchResults.value = emptyList()
+    }
+
     fun loadItems(listId: String) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                // Подписываемся на изменения в Room для конкретного списка
                 repository.getItems(listId).collect {
                     _items.value = it
                 }
-                // Запрашиваем обновление из сети
                 repository.refreshItems(listId)
             } catch (e: Exception) {
                 _error.value = e.message
@@ -145,7 +170,8 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
         name: String,
         storeId: String? = null,
         quantity: Double = 1.0,
-        price: Double? = null
+        price: Double? = null,
+        imageUrl: String? = null
     ) {
         viewModelScope.launch {
             try {
@@ -155,7 +181,8 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
                     customName = name,
                     storeId = storeId,
                     quantity = quantity,
-                    price = price
+                    price = price,
+                    imageUrl = imageUrl
                 )
                 repository.addItem(item)
             } catch (e: Exception) {
@@ -165,7 +192,6 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // Функция для копирования товаров из одного списка в другой (История -> Новый заказ)
     fun copyItemsFromList(fromListId: String, toListId: String) {
         viewModelScope.launch {
             try {
@@ -176,7 +202,7 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
                     oldItem.copy(
                         id = java.util.UUID.randomUUID().toString(),
                         listId = toListId,
-                        isChecked = false // В новом списке всё не куплено
+                        isChecked = false
                     )
                 }
                 
