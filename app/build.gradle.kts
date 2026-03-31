@@ -92,6 +92,9 @@ dependencies {
     implementation(libs.supabase.functions)
     implementation(libs.ktor.client.android)
 
+    // Image Loading
+    implementation(libs.coil.compose)
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
