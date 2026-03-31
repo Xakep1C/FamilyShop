@@ -7,11 +7,22 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
+data class OnlineProduct(
+    val name: String,
+    val price: Double? = null,
+    val storeName: String,
+    val imageUrl: String? = null,
+    val productUrl: String? = null,
+    val unit: String = "шт"
+)
+
+@Serializable
 @Entity(tableName = "stores")
 data class Store(
     @PrimaryKey val id: String = "",
     val name: String = "",
-    val color: String = ""
+    val color: String = "",
+    val url: String? = null
 )
 
 @Serializable
@@ -43,7 +54,8 @@ data class ShoppingListItem(
     val quantity: Double = 1.0,
     val unit: String = "шт",
     val price: Double? = null,
-    @SerialName("is_checked") @ColumnInfo(name = "is_checked") val isChecked: Boolean = false
+    @SerialName("is_checked") @ColumnInfo(name = "is_checked") val isChecked: Boolean = false,
+    @SerialName("image_url") @ColumnInfo(name = "image_url") val imageUrl: String? = null
 )
 
 @Serializable
@@ -57,5 +69,6 @@ data class Product(
     val barcode: String? = null,
     @SerialName("photo_url") @ColumnInfo(name = "photo_url") val photoUrl: String? = null,
     @SerialName("photo_fetched_at") @ColumnInfo(name = "photo_fetched_at") val photoFetchedAt: String? = null,
-    @SerialName("created_at") @ColumnInfo(name = "created_at") val createdAt: String? = null
+    @SerialName("created_at") @ColumnInfo(name = "created_at") val createdAt: String? = null,
+    val url: String? = null
 )
