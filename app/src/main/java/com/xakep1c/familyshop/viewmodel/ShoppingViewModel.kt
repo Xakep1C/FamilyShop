@@ -62,6 +62,9 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
 
         // Первичная загрузка из сети в кэш
         refreshInitialData()
+        
+        // Включаем Realtime прослушивание
+        repository.observeRealtimeChanges(viewModelScope)
     }
 
     private fun refreshInitialData() {

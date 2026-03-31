@@ -4,7 +4,14 @@ import com.xakep1c.familyshop.db.ShoppingDao
 import com.xakep1c.familyshop.model.*
 import com.xakep1c.familyshop.supabase
 import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.realtime.PostgresAction
+import io.github.jan.supabase.realtime.Realtime
+import io.github.jan.supabase.realtime.channel
+import io.github.jan.supabase.realtime.postgresChangeFlow
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.CoroutineScope
 import android.util.Log
 
 class ShoppingRepository(private val dao: ShoppingDao) {
@@ -18,6 +25,50 @@ class ShoppingRepository(private val dao: ShoppingDao) {
             dao.insertShoppingLists(remoteLists)
         } catch (e: Exception) {
             Log.e("Repository", "Error refreshing lists: ${e.message}")
+        }
+    }
+
+    // Слушаем изменения в таблицах через Supabase Realtime
+    fun observeRealtimeChanges(scope: CoroutineScope) {
+        val channel = supabase.channel("public-changes")
+
+        // 1. Слушаем изменения в списках
+        channel.postgresChangeFlow<PostgresAction>(schema = "public") {
+            table = "shopping_lists"
+        }.onEach { action ->
+            when (action) {
+                is PostgresAction.Insert -> dao.insertShoppingLists(listOf(action.decodeRecord()))
+                is PostgresAction.Update -> dao.insertShoppingLists(listOf(action.decodeRecord()))
+                is PostgresAction.Delete -> {
+                    val id = action.oldRecord["id"]?.toString()?.replace("\"", "")
+                    if (id != null) dao.deleteShoppingList(id)
+                }
+                else -> {}
+            }
+        }.launchIn(scope)
+
+        // 2. Слушаем изменения в товарах
+        channel.postgresChangeFlow<PostgresAction>(schema = "public") {
+            table = "shopping_list_items"
+        }.onEach { action ->
+            when (action) {
+                is PostgresAction.Insert -> dao.insertItems(listOf(action.decodeRecord()))
+                is PostgresAction.Update -> dao.insertItems(listOf(action.decodeRecord()))
+                is PostgresAction.Delete -> {
+                    val id = action.oldRecord["id"]?.toString()?.replace("\"", "")
+                    if (id != null) dao.deleteItem(id)
+                }
+                else -> {}
+            }
+        }.launchIn(scope)
+
+        // Подключаемся
+        scope.launch {
+            try {
+                channel.subscribe()
+            } catch (e: Exception) {
+                Log.e("Realtime", "Subscription failed: ${e.message}")
+            }
         }
     }
 
@@ -56,14 +107,10 @@ class ShoppingRepository(private val dao: ShoppingDao) {
 
     suspend fun addItem(item: ShoppingListItem) {
         supabase.postgrest["shopping_list_items"].insert(item)
-        refreshItems(item.listId)
     }
 
     suspend fun addItems(items: List<ShoppingListItem>) {
         supabase.postgrest["shopping_list_items"].insert(items)
-        if (items.isNotEmpty()) {
-            refreshItems(items.first().listId)
-        }
     }
 
     suspend fun checkItem(itemId: String, checked: Boolean) {
