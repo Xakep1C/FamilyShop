@@ -166,4 +166,14 @@ class ShoppingRepository(private val dao: ShoppingDao) {
             Log.e("Repository", "Error refreshing products: ${e.message}")
         }
     }
+
+    suspend fun addProducts(products: List<Product>) = withContext(Dispatchers.IO) {
+        try {
+            // Используем upsert, чтобы не создавать дубликаты (если настроен уникальный индекс по имени/url в Supabase)
+            supabase.postgrest["products"].upsert(products)
+            dao.insertProducts(products)
+        } catch (e: Exception) {
+            Log.e("Repository", "Error adding products: ${e.message}")
+        }
+    }
 }

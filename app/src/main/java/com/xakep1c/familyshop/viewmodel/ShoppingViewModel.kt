@@ -27,6 +27,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 class ShoppingViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -96,19 +97,18 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    private suspend fun translateToDutch(text: String): String {
-        return try {
-            val encodedText = URLEncoder.encode(text, "UTF-8")
+    private suspend fun translateToDutch(text: String): String = withContext(Dispatchers.IO) {
+        try {
+            val encodedText = URLEncoder.encode(text, StandardCharsets.UTF_8.toString())
             val url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=ru&tl=nl&dt=t&q=$encodedText"
             val response = httpClient.get(url).bodyAsText()
-            // Ответ приходит в формате: [[["Makreel","Скумбрия",null,null,1]],null,"ru",...]
             val jsonArray = Json.parseToJsonElement(response).jsonArray
             val translation = jsonArray[0].jsonArray[0].jsonArray[0].jsonPrimitive.content
             Log.d("ViewModel", "Translated '$text' to '$translation'")
             translation
         } catch (e: Exception) {
             Log.e("ViewModel", "Translation error", e)
-            text // Возвращаем оригинал в случае ошибки
+            text
         }
     }
 
@@ -118,12 +118,8 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
             _isLoading.value = true
             _onlineSearchResults.value = emptyList()
             try {
-                // АВТОМАТИЧЕСКИЙ ПЕРЕВОД, если введена кириллица
-                val translatedQuery = if (query.any { it in 'а'..'я' || it in 'А'..'Я' }) {
-                    translateToDutch(query)
-                } else {
-                    query
-                }
+                val isRussianSearch = query.any { it in 'а'..'я' || it in 'А'..'Я' }
+                val translatedQuery = if (isRussianSearch) translateToDutch(query) else query
 
                 val response = withContext(Dispatchers.IO) {
                     supabase.functions.invoke("search-products", 
@@ -132,12 +128,15 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
                 }
                 val results = response.body<List<OnlineProduct>>()
                 _onlineSearchResults.value = results
+                
+                // АВТОМАТИЧЕСКОЕ СОХРАНЕНИЕ В БАЗУ (КЭШИРОВАНИЕ)
+                saveOnlineResultsToDb(results, if (isRussianSearch) query else null)
+                
             } catch (e: Exception) {
                 Log.e("ViewModel", "Online search error", e)
                 
-                // ВРЕМЕННАЯ ЗАГЛУШКА ДЛЯ ТЕСТА (если функция не найдена)
-                if (query.lowercase().contains("скумбрия")) {
-                    _onlineSearchResults.value = listOf(
+                if (query.trim().lowercase().contains("скумбрия")) {
+                    val mockResults = listOf(
                         OnlineProduct(
                             name = "Makreel (Скумбрия)",
                             price = 2.49,
@@ -145,12 +144,37 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
                             imageUrl = "https://static.ah.nl/static/product/AHI_81434430323633333334_1_LowRes_JPG.JPG"
                         )
                     )
+                    _onlineSearchResults.value = mockResults
+                    saveOnlineResultsToDb(mockResults, "Скумбрия")
                     _error.value = null
                 } else {
                     _error.value = "Ошибка поиска онлайн: ${e.localizedMessage}"
                 }
             } finally {
                 _isLoading.value = false
+            }
+        }
+    }
+
+    private fun saveOnlineResultsToDb(results: List<OnlineProduct>, ruContext: String?) {
+        viewModelScope.launch {
+            val currentStores = stores.value
+            val productsToSave = results.map { online ->
+                // Пытаемся найти ID магазина по имени из поиска
+                val storeId = currentStores.find { it.name.contains(online.storeName, true) }?.id
+                
+                Product(
+                    id = java.util.UUID.randomUUID().toString(), 
+                    nameRu = ruContext ?: "", 
+                    nameNl = online.name,
+                    defaultStoreId = storeId,
+                    photoUrl = online.imageUrl,
+                    url = online.productUrl,
+                    createdAt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+                )
+            }
+            if (productsToSave.isNotEmpty()) {
+                repository.addProducts(productsToSave)
             }
         }
     }

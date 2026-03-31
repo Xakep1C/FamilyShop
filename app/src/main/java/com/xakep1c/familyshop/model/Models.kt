@@ -49,6 +49,7 @@ data class ShoppingList(
 data class ShoppingListItem(
     @PrimaryKey val id: String = "",
     @SerialName("list_id") @ColumnInfo(name = "list_id") val listId: String = "",
+    @SerialName("product_id") @ColumnInfo(name = "product_id") val productId: String? = null,
     @SerialName("custom_name") @ColumnInfo(name = "custom_name") val customName: String = "",
     @SerialName("store_id") @ColumnInfo(name = "store_id") val storeId: String? = null,
     val quantity: Double = 1.0,
@@ -65,6 +66,7 @@ data class Product(
     @SerialName("name_ru") @ColumnInfo(name = "name_ru") val nameRu: String = "",
     @SerialName("name_nl") @ColumnInfo(name = "name_nl") val nameNl: String = "",
     @SerialName("category_id") @ColumnInfo(name = "category_id") val categoryId: String? = null,
+    @SerialName("default_store_id") @ColumnInfo(name = "default_store_id") val defaultStoreId: String? = null,
     val classifier: String? = null,
     val barcode: String? = null,
     @SerialName("photo_url") @ColumnInfo(name = "photo_url") val photoUrl: String? = null,
