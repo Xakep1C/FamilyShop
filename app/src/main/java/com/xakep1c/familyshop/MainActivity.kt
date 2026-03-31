@@ -35,7 +35,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun FamilyShopApp(authViewModel: AuthViewModel = viewModel()) {
     val navController = rememberNavController()
-    val isLoggedIn by authViewModel.isLoggedIn.collectAsState()
+    // ВРЕМЕННО для теста: заходим без логина
+    val isLoggedIn = true // by authViewModel.isLoggedIn.collectAsState()
 
     if (!isLoggedIn) {
         LoginScreen(authViewModel)

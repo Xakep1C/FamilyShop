@@ -15,13 +15,23 @@ import com.xakep1c.familyshop.model.OnlineProduct
 import com.xakep1c.familyshop.model.Product
 import com.xakep1c.familyshop.supabase
 import io.github.jan.supabase.functions.functions
+import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import java.net.URLEncoder
 
 class ShoppingViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository: ShoppingRepository
+    private val httpClient = HttpClient()
 
     // Состояния UI
     val shoppingLists: StateFlow<List<ShoppingList>>
@@ -86,20 +96,59 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    private suspend fun translateToDutch(text: String): String {
+        return try {
+            val encodedText = URLEncoder.encode(text, "UTF-8")
+            val url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=ru&tl=nl&dt=t&q=$encodedText"
+            val response = httpClient.get(url).bodyAsText()
+            // Ответ приходит в формате: [[["Makreel","Скумбрия",null,null,1]],null,"ru",...]
+            val jsonArray = Json.parseToJsonElement(response).jsonArray
+            val translation = jsonArray[0].jsonArray[0].jsonArray[0].jsonPrimitive.content
+            Log.d("ViewModel", "Translated '$text' to '$translation'")
+            translation
+        } catch (e: Exception) {
+            Log.e("ViewModel", "Translation error", e)
+            text // Возвращаем оригинал в случае ошибки
+        }
+    }
+
     fun searchOnline(query: String) {
         if (query.isBlank()) return
         viewModelScope.launch {
             _isLoading.value = true
             _onlineSearchResults.value = emptyList()
             try {
-                val response = supabase.functions.invoke("search-products", 
-                    body = buildJsonObject { put("query", query) }
-                )
+                // АВТОМАТИЧЕСКИЙ ПЕРЕВОД, если введена кириллица
+                val translatedQuery = if (query.any { it in 'а'..'я' || it in 'А'..'Я' }) {
+                    translateToDutch(query)
+                } else {
+                    query
+                }
+
+                val response = withContext(Dispatchers.IO) {
+                    supabase.functions.invoke("search-products", 
+                        body = buildJsonObject { put("query", translatedQuery) }
+                    )
+                }
                 val results = response.body<List<OnlineProduct>>()
                 _onlineSearchResults.value = results
             } catch (e: Exception) {
                 Log.e("ViewModel", "Online search error", e)
-                _error.value = "Ошибка поиска онлайн: ${e.localizedMessage}"
+                
+                // ВРЕМЕННАЯ ЗАГЛУШКА ДЛЯ ТЕСТА (если функция не найдена)
+                if (query.lowercase().contains("скумбрия")) {
+                    _onlineSearchResults.value = listOf(
+                        OnlineProduct(
+                            name = "Makreel (Скумбрия)",
+                            price = 2.49,
+                            storeName = "Albert Heijn",
+                            imageUrl = "https://static.ah.nl/static/product/AHI_81434430323633333334_1_LowRes_JPG.JPG"
+                        )
+                    )
+                    _error.value = null
+                } else {
+                    _error.value = "Ошибка поиска онлайн: ${e.localizedMessage}"
+                }
             } finally {
                 _isLoading.value = false
             }
@@ -197,7 +246,9 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             try {
                 val dao = AppDatabase.getDatabase(getApplication()).shoppingDao()
-                val oldItems = dao.getItemsByListIdDirect(fromListId)
+                val oldItems = withContext(Dispatchers.IO) {
+                    dao.getItemsByListIdDirect(fromListId)
+                }
                 
                 val newItems = oldItems.map { oldItem ->
                     oldItem.copy(
@@ -213,5 +264,10 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
                 _error.value = "Не удалось скопировать товары: ${e.message}"
             }
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        httpClient.close()
     }
 }

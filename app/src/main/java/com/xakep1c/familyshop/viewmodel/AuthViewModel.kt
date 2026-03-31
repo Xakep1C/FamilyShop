@@ -17,6 +17,7 @@ import io.github.jan.supabase.auth.providers.Google
 import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.providers.builtin.IDToken
 import io.github.jan.supabase.auth.status.SessionStatus
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -24,6 +25,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class AuthViewModel : ViewModel() {
 
@@ -41,11 +43,15 @@ class AuthViewModel : ViewModel() {
     val isLoading = _isLoading.asStateFlow()
 
     fun signInWithEmail(email: String, password: String) {
-        if (email.isBlank()) {
+        val trimmedEmail = email.trim()
+        val trimmedPassword = password.trim()
+        
+        Log.d("Auth", "Attempting login with: $trimmedEmail")
+        if (trimmedEmail.isBlank()) {
             _error.value = "Укажите Email"
             return
         }
-        if (password.isBlank()) {
+        if (trimmedPassword.isBlank()) {
             _error.value = "Введите пароль"
             return
         }
@@ -54,10 +60,13 @@ class AuthViewModel : ViewModel() {
             _isLoading.value = true
             _error.value = null
             try {
-                supabase.auth.signInWith(Email) {
-                    this.email = email
-                    this.password = password
+                withContext(Dispatchers.IO) {
+                    supabase.auth.signInWith(Email) {
+                        this.email = trimmedEmail
+                        this.password = trimmedPassword
+                    }
                 }
+                Log.d("Auth", "Login successful")
             } catch (e: Exception) {
                 Log.e("Auth", "Login error", e)
                 _error.value = mapError(e.message ?: "")
@@ -68,15 +77,18 @@ class AuthViewModel : ViewModel() {
     }
 
     fun signUpWithEmail(email: String, password: String) {
-        if (email.isBlank()) {
+        val trimmedEmail = email.trim()
+        val trimmedPassword = password.trim()
+
+        if (trimmedEmail.isBlank()) {
             _error.value = "Логин (Email) не указан"
             return
         }
-        if (password.isBlank()) {
+        if (trimmedPassword.isBlank()) {
             _error.value = "Придумайте пароль"
             return
         }
-        if (password.length < 6) {
+        if (trimmedPassword.length < 6) {
             _error.value = "Пароль должен быть не менее 6 символов"
             return
         }
@@ -85,9 +97,11 @@ class AuthViewModel : ViewModel() {
             _isLoading.value = true
             _error.value = null
             try {
-                supabase.auth.signUpWith(Email) {
-                    this.email = email
-                    this.password = password
+                withContext(Dispatchers.IO) {
+                    supabase.auth.signUpWith(Email) {
+                        this.email = trimmedEmail
+                        this.password = trimmedPassword
+                    }
                 }
                 _error.value = "Успешно! Проверьте почту для подтверждения"
             } catch (e: Exception) {
@@ -111,7 +125,9 @@ class AuthViewModel : ViewModel() {
                 "Нет соединения с интернетом"
             message.contains("Email not confirmed", ignoreCase = true) -> 
                 "Почта не подтверждена. Проверьте ваш почтовый ящик"
-            else -> "Ошибка: что-то пошло не так. Проверьте данные"
+            message.contains("email_address_invalid", ignoreCase = true) ->
+                "Некорректный формат Email"
+            else -> "Ошибка: что-то пошло не так. Проверьте данные ($message)"
         }
     }
 
@@ -119,25 +135,27 @@ class AuthViewModel : ViewModel() {
         viewModelScope.launch {
             _isLoading.value = true
             _error.value = null
-            val credentialManager = CredentialManager.create(context)
-            
-            val googleIdOption: GetGoogleIdOption = GetGoogleIdOption.Builder()
-                .setFilterByAuthorizedAccounts(false)
-                .setServerClientId(BuildConfig.GOOGLE_CLIENT_ID)
-                .setAutoSelectEnabled(true)
-                .build()
-
-            val request: GetCredentialRequest = GetCredentialRequest.Builder()
-                .addCredentialOption(googleIdOption)
-                .build()
-
             try {
+                val credentialManager = CredentialManager.create(context)
+                
+                val googleIdOption: GetGoogleIdOption = GetGoogleIdOption.Builder()
+                    .setFilterByAuthorizedAccounts(false)
+                    .setServerClientId(BuildConfig.GOOGLE_CLIENT_ID)
+                    .setAutoSelectEnabled(true)
+                    .build()
+
+                val request: GetCredentialRequest = GetCredentialRequest.Builder()
+                    .addCredentialOption(googleIdOption)
+                    .build()
+
                 val result = credentialManager.getCredential(context = context, request = request)
                 val credential = result.credential
                 if (credential is GoogleIdTokenCredential) {
-                    supabase.auth.signInWith(IDToken) {
-                        idToken = credential.idToken
-                        provider = Google
+                    withContext(Dispatchers.IO) {
+                        supabase.auth.signInWith(IDToken) {
+                            idToken = credential.idToken
+                            provider = Google
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -156,7 +174,9 @@ class AuthViewModel : ViewModel() {
     fun signOut(context: Context) {
         viewModelScope.launch {
             try {
-                supabase.auth.signOut()
+                withContext(Dispatchers.IO) {
+                    supabase.auth.signOut()
+                }
                 val credentialManager = CredentialManager.create(context)
                 credentialManager.clearCredentialState(ClearCredentialStateRequest())
             } catch (e: Exception) {
