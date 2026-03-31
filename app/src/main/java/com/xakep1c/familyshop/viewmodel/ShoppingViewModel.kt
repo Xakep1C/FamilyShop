@@ -15,6 +15,7 @@ import com.xakep1c.familyshop.model.OnlineProduct
 import com.xakep1c.familyshop.model.Product
 import com.xakep1c.familyshop.supabase
 import io.github.jan.supabase.functions.functions
+import io.ktor.client.call.body
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -94,7 +95,7 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
                 val response = supabase.functions.invoke("search-products", 
                     body = buildJsonObject { put("query", query) }
                 )
-                val results = response.decodeAs<List<OnlineProduct>>()
+                val results = response.body<List<OnlineProduct>>()
                 _onlineSearchResults.value = results
             } catch (e: Exception) {
                 Log.e("ViewModel", "Online search error", e)
