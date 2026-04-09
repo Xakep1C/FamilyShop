@@ -17,7 +17,7 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-class ShoppingRepository(private val dao: ShoppingDao) {
+class ShoppingRepository(val dao: ShoppingDao) {
 
     // --- Списки покупок ---
     val allShoppingLists: Flow<List<ShoppingList>> = dao.getAllShoppingLists()
@@ -109,6 +109,8 @@ class ShoppingRepository(private val dao: ShoppingDao) {
     // --- Элементы списка ---
     fun getItems(listId: String): Flow<List<ShoppingListItem>> = dao.getItemsByListId(listId)
 
+    suspend fun getItemsDirect(listId: String): List<ShoppingListItem> = dao.getItemsByListIdDirect(listId)
+
     suspend fun refreshItems(listId: String) = withContext(Dispatchers.IO) {
         try {
             val remoteItems = supabase.postgrest["shopping_list_items"]
@@ -121,11 +123,21 @@ class ShoppingRepository(private val dao: ShoppingDao) {
     }
 
     suspend fun addItem(item: ShoppingListItem) = withContext(Dispatchers.IO) {
-        supabase.postgrest["shopping_list_items"].insert(item)
+        dao.insertItems(listOf(item)) // Optimistic UI
+        try {
+            supabase.postgrest["shopping_list_items"].insert(item)
+        } catch (e: Exception) {
+            Log.e("Repository", "Error adding item: ${e.message}")
+        }
     }
 
     suspend fun addItems(items: List<ShoppingListItem>) = withContext(Dispatchers.IO) {
-        supabase.postgrest["shopping_list_items"].insert(items)
+        dao.insertItems(items) // Optimistic UI
+        try {
+            supabase.postgrest["shopping_list_items"].insert(items)
+        } catch (e: Exception) {
+            Log.e("Repository", "Error adding items: ${e.message}")
+        }
     }
 
     suspend fun checkItem(itemId: String, checked: Boolean) = withContext(Dispatchers.IO) {

@@ -1,38 +1,34 @@
 package com.xakep1c.familyshop.viewmodel
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.xakep1c.familyshop.db.AppDatabase
-import com.xakep1c.familyshop.model.ShoppingList
-import com.xakep1c.familyshop.model.ShoppingListItem
-import com.xakep1c.familyshop.model.Store
+import com.xakep1c.familyshop.model.*
 import com.xakep1c.familyshop.repository.ShoppingRepository
-import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.launch
-import android.util.Log
-import com.xakep1c.familyshop.model.OnlineProduct
-import com.xakep1c.familyshop.model.Product
 import com.xakep1c.familyshop.supabase
 import io.github.jan.supabase.functions.functions
 import io.ktor.client.HttpClient
-import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
+import kotlinx.serialization.json.*
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.text.SimpleDateFormat
+import java.util.*
 
 class ShoppingViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository: ShoppingRepository
     private val httpClient = HttpClient()
+    private val json = Json { ignoreUnknownKeys = true }
+    private var itemsJob: Job? = null
 
     // Состояния UI
     val shoppingLists: StateFlow<List<ShoppingList>>
@@ -101,8 +97,8 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
         try {
             val encodedText = URLEncoder.encode(text, StandardCharsets.UTF_8.toString())
             val url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=ru&tl=nl&dt=t&q=$encodedText"
-            val response = httpClient.get(url).bodyAsText()
-            val jsonArray = Json.parseToJsonElement(response).jsonArray
+            val responseText = httpClient.get(url).bodyAsText()
+            val jsonArray = json.parseToJsonElement(responseText).jsonArray
             val translation = jsonArray[0].jsonArray[0].jsonArray[0].jsonPrimitive.content
             Log.d("ViewModel", "Translated '$text' to '$translation'")
             translation
@@ -126,10 +122,12 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
                         body = buildJsonObject { put("query", translatedQuery) }
                     )
                 }
-                val results = response.body<List<OnlineProduct>>()
+                
+                // Используем ручную десериализацию через Ktor HttpResponse, так как decodeAs может быть недоступен без специфичных импортов
+                val responseBody = response.bodyAsText()
+                val results = json.decodeFromString<List<OnlineProduct>>(responseBody)
                 _onlineSearchResults.value = results
                 
-                // АВТОМАТИЧЕСКОЕ СОХРАНЕНИЕ В БАЗУ (КЭШИРОВАНИЕ)
                 saveOnlineResultsToDb(results, if (isRussianSearch) query else null)
                 
             } catch (e: Exception) {
@@ -160,17 +158,16 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             val currentStores = stores.value
             val productsToSave = results.map { online ->
-                // Пытаемся найти ID магазина по имени из поиска
                 val storeId = currentStores.find { it.name.contains(online.storeName, true) }?.id
                 
                 Product(
-                    id = java.util.UUID.randomUUID().toString(), 
+                    id = UUID.randomUUID().toString(), 
                     nameRu = ruContext ?: "", 
                     nameNl = online.name,
                     defaultStoreId = storeId,
                     photoUrl = online.imageUrl,
                     url = online.productUrl,
-                    createdAt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+                    createdAt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
                 )
             }
             if (productsToSave.isNotEmpty()) {
@@ -184,15 +181,22 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun loadItems(listId: String) {
+        // Отменяем старую подписку на БД
+        itemsJob?.cancel()
+        
+        // Подписываемся на локальную БД (Flow будет обновлять UI автоматически)
+        itemsJob = repository.getItems(listId)
+            .onEach { _items.value = it }
+            .launchIn(viewModelScope)
+
+        // Запускаем обновление из сети в отдельной корутине
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                repository.getItems(listId).collect {
-                    _items.value = it
-                }
                 repository.refreshItems(listId)
             } catch (e: Exception) {
-                _error.value = e.message
+                Log.e("ViewModel", "Error refreshing items: ${e.message}")
+                _error.value = "Ошибка обновления: ${e.message}"
             } finally {
                 _isLoading.value = false
             }
@@ -250,7 +254,7 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             try {
                 val item = ShoppingListItem(
-                    id = java.util.UUID.randomUUID().toString(),
+                    id = UUID.randomUUID().toString(),
                     listId = listId,
                     customName = name,
                     storeId = storeId,
@@ -269,14 +273,12 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
     fun copyItemsFromList(fromListId: String, toListId: String) {
         viewModelScope.launch {
             try {
-                val dao = AppDatabase.getDatabase(getApplication()).shoppingDao()
-                val oldItems = withContext(Dispatchers.IO) {
-                    dao.getItemsByListIdDirect(fromListId)
-                }
+                // Используем метод репозитория вместо прямого обращения к DAO
+                val oldItems = repository.getItemsDirect(fromListId)
                 
                 val newItems = oldItems.map { oldItem ->
                     oldItem.copy(
-                        id = java.util.UUID.randomUUID().toString(),
+                        id = UUID.randomUUID().toString(),
                         listId = toListId,
                         isChecked = false
                     )
