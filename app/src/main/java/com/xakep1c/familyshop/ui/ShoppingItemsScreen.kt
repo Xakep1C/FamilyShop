@@ -86,6 +86,8 @@ fun ShoppingItemsScreen(
                 items(items) { item ->
                     ItemCard(
                         name = item.customName,
+                        quantity = item.quantity,
+                        unit = item.unit,
                         price = item.price,
                         imageUrl = item.imageUrl,
                         isChecked = item.isChecked,
@@ -115,6 +117,8 @@ fun ShoppingItemsScreen(
 @Composable
 fun ItemCard(
     name: String,
+    quantity: Double,
+    unit: String,
     price: Double?,
     imageUrl: String?,
     isChecked: Boolean,
@@ -132,21 +136,34 @@ fun ItemCard(
                 AsyncImage(
                     model = imageUrl,
                     contentDescription = null,
-                    modifier = Modifier.size(40.dp).padding(horizontal = 4.dp),
+                    modifier = Modifier.size(48.dp).padding(horizontal = 4.dp),
                     contentScale = ContentScale.Fit
                 )
             }
 
-            Column(Modifier.weight(1f).padding(start = 4.dp)) {
+            Column(Modifier.weight(1f).padding(start = 8.dp)) {
                 Text(
                     text = name,
                     style = MaterialTheme.typography.bodyLarge.copy(
+                        fontWeight = FontWeight.Bold,
                         textDecoration = if (isChecked) TextDecoration.LineThrough else TextDecoration.None,
                         color = if (isChecked) Color.Gray else Color.Unspecified
                     )
                 )
-                if (price != null) {
-                    Text("${price} €", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "$quantity $unit",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    if (price != null) {
+                        Text(
+                            text = " • ${price} €", 
+                            style = MaterialTheme.typography.bodySmall, 
+                            color = Color.Gray,
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
+                    }
                 }
             }
             

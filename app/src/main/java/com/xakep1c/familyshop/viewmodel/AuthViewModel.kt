@@ -135,6 +135,7 @@ class AuthViewModel : ViewModel() {
         viewModelScope.launch {
             _isLoading.value = true
             _error.value = null
+            Log.d("Auth", "Google sign in started with Client ID: ${BuildConfig.GOOGLE_CLIENT_ID}")
             try {
                 val credentialManager = CredentialManager.create(context)
                 
@@ -150,6 +151,8 @@ class AuthViewModel : ViewModel() {
 
                 val result = credentialManager.getCredential(context = context, request = request)
                 val credential = result.credential
+                Log.d("Auth", "Credential received: ${credential.type}")
+                
                 if (credential is GoogleIdTokenCredential) {
                     withContext(Dispatchers.IO) {
                         supabase.auth.signInWith(IDToken) {
@@ -157,10 +160,17 @@ class AuthViewModel : ViewModel() {
                             provider = Google
                         }
                     }
+                    Log.d("Auth", "Google sign in success with Supabase")
+                } else {
+                    Log.e("Auth", "Received unexpected credential type: ${credential.type}")
+                    _error.value = "Неподдерживаемый тип входа"
                 }
+            } catch (e: GetCredentialException) {
+                Log.e("Auth", "GetCredentialException: code=${e.type}, message=${e.message}", e)
+                _error.value = "Ошибка Google: ${e.message}"
             } catch (e: Exception) {
-                Log.e("Auth", "Google error", e)
-                _error.value = "Ошибка Google: ${e.localizedMessage}"
+                Log.e("Auth", "Unexpected Google login error", e)
+                _error.value = "Ошибка: ${e.localizedMessage}"
             } finally {
                 _isLoading.value = false
             }

@@ -123,7 +123,6 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
                     )
                 }
                 
-                // Используем ручную десериализацию через Ktor HttpResponse, так как decodeAs может быть недоступен без специфичных импортов
                 val responseBody = response.bodyAsText()
                 val results = json.decodeFromString<List<OnlineProduct>>(responseBody)
                 _onlineSearchResults.value = results
@@ -181,15 +180,12 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun loadItems(listId: String) {
-        // Отменяем старую подписку на БД
         itemsJob?.cancel()
         
-        // Подписываемся на локальную БД (Flow будет обновлять UI автоматически)
         itemsJob = repository.getItems(listId)
             .onEach { _items.value = it }
             .launchIn(viewModelScope)
 
-        // Запускаем обновление из сети в отдельной корутине
         viewModelScope.launch {
             _isLoading.value = true
             try {
@@ -209,6 +205,16 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
                 repository.createShoppingList(name)
             } catch (e: Exception) {
                 _error.value = "Не удалось создать список: ${e.message}"
+            }
+        }
+    }
+
+    fun deleteShoppingList(listId: String) {
+        viewModelScope.launch {
+            try {
+                repository.deleteShoppingList(listId)
+            } catch (e: Exception) {
+                _error.value = "Не удалось удалить список: ${e.message}"
             }
         }
     }
@@ -273,7 +279,6 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
     fun copyItemsFromList(fromListId: String, toListId: String) {
         viewModelScope.launch {
             try {
-                // Используем метод репозитория вместо прямого обращения к DAO
                 val oldItems = repository.getItemsDirect(fromListId)
                 
                 val newItems = oldItems.map { oldItem ->

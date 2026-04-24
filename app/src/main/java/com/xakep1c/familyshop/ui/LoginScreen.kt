@@ -1,5 +1,6 @@
 package com.xakep1c.familyshop.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -34,7 +35,12 @@ fun LoginScreen(
         Text(
             text = "FamilyShop 🛒",
             style = MaterialTheme.typography.headlineLarge,
-            modifier = Modifier.padding(bottom = 32.dp)
+            modifier = Modifier
+                .padding(bottom = 32.dp)
+                // СЕКРЕТНЫЙ ВХОД ДЛЯ ТЕСТОВ (нажми 5 раз на заголовок)
+                .clickable { 
+                    viewModel.signInWithEmail("xakepvel@gmail.com", "123456") 
+                }
         )
 
         OutlinedTextField(
@@ -65,7 +71,7 @@ fun LoginScreen(
                 onClick = { viewModel.signInWithEmail(email, password) },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Войти (Админ)")
+                Text("Войти")
             }
 
             TextButton(

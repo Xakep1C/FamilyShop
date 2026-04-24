@@ -16,6 +16,8 @@ import kotlinx.coroutines.launch
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.*
 
 class ShoppingRepository(val dao: ShoppingDao) {
 
@@ -88,10 +90,40 @@ class ShoppingRepository(val dao: ShoppingDao) {
     }
 
     suspend fun createShoppingList(name: String) = withContext(Dispatchers.IO) {
-        val newList = supabase.postgrest["shopping_lists"]
-            .insert(mapOf("name" to name))
-            .decodeSingle<ShoppingList>()
+        val localId = UUID.randomUUID().toString()
+        val timestamp = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).format(Date())
+        
+        val newList = ShoppingList(
+            id = localId,
+            name = name,
+            createdAt = timestamp
+        )
+        
+        // Сначала в локальную БД
         dao.insertShoppingLists(listOf(newList))
+        
+        try {
+            // Пытаемся отправить в Supabase
+            val remoteList = supabase.postgrest["shopping_lists"]
+                .insert(newList)
+                .decodeSingle<ShoppingList>()
+            
+            // Если сервер вернул более актуальные данные (например, ID или created_at), обновляем локально
+            dao.insertShoppingLists(listOf(remoteList))
+        } catch (e: Exception) {
+            Log.e("Repository", "Sync createShoppingList failed: ${e.message}")
+        }
+    }
+
+    suspend fun deleteShoppingList(listId: String) = withContext(Dispatchers.IO) {
+        dao.deleteShoppingList(listId)
+        try {
+            supabase.postgrest["shopping_lists"].delete {
+                filter { eq("id", listId) }
+            }
+        } catch (e: Exception) {
+            Log.e("Repository", "Delete list sync failed: ${e.message}")
+        }
     }
 
     suspend fun completeShoppingList(listId: String) = withContext(Dispatchers.IO) {
@@ -154,7 +186,11 @@ class ShoppingRepository(val dao: ShoppingDao) {
 
     suspend fun deleteItem(itemId: String) = withContext(Dispatchers.IO) {
         dao.deleteItem(itemId)
-        supabase.postgrest["shopping_list_items"].delete { filter { eq("id", itemId) } }
+        try {
+            supabase.postgrest["shopping_list_items"].delete { filter { eq("id", itemId) } }
+        } catch (e: Exception) {
+             Log.e("Repository", "Delete item sync failed: ${e.message}")
+        }
     }
 
     // --- Магазины и Продукты ---
@@ -181,7 +217,6 @@ class ShoppingRepository(val dao: ShoppingDao) {
 
     suspend fun addProducts(products: List<Product>) = withContext(Dispatchers.IO) {
         try {
-            // Используем upsert, чтобы не создавать дубликаты (если настроен уникальный индекс по имени/url в Supabase)
             supabase.postgrest["products"].upsert(products)
             dao.insertProducts(products)
         } catch (e: Exception) {

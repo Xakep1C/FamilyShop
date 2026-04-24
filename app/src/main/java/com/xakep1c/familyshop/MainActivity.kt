@@ -18,6 +18,7 @@ import com.xakep1c.familyshop.ui.ShoppingItemsScreen
 import com.xakep1c.familyshop.ui.ShoppingListScreen
 import com.xakep1c.familyshop.ui.theme.FamilyShopTheme
 import com.xakep1c.familyshop.viewmodel.AuthViewModel
+import com.xakep1c.familyshop.viewmodel.ShoppingViewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -33,10 +34,12 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun FamilyShopApp(authViewModel: AuthViewModel = viewModel()) {
+fun FamilyShopApp(
+    authViewModel: AuthViewModel = viewModel(),
+    shoppingViewModel: ShoppingViewModel = viewModel()
+) {
     val navController = rememberNavController()
-    // ВРЕМЕННО для теста: заходим без логина
-    val isLoggedIn = true // by authViewModel.isLoggedIn.collectAsState()
+    val isLoggedIn by authViewModel.isLoggedIn.collectAsState()
 
     if (!isLoggedIn) {
         LoginScreen(authViewModel)
@@ -49,7 +52,8 @@ fun FamilyShopApp(authViewModel: AuthViewModel = viewModel()) {
                 ShoppingListScreen(
                     onListClick = { id, name ->
                         navController.navigate("shopping_items/$id/$name")
-                    }
+                    },
+                    viewModel = shoppingViewModel
                 )
             }
             composable(
@@ -64,7 +68,8 @@ fun FamilyShopApp(authViewModel: AuthViewModel = viewModel()) {
                 ShoppingItemsScreen(
                     listId = listId,
                     listName = listName,
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStack() },
+                    viewModel = shoppingViewModel
                 )
             }
         }
